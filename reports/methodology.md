@@ -103,7 +103,7 @@ External sources are used as a *check on*, not the *source of*, the labels. This
 
 The candidate universe is every ERC-20 token with at least one Uniswap V2 or V3 pool on Ethereum mainnet whose `PairCreated` (V2) or `PoolCreated` (V3) event occurred between **2022-07-01** and **2025-12-31**. The window starts after the May 2022 Terra/LUNA collapse, which produced unusual market conditions and a one-time spike in token launches that does not reflect typical conditions. The end date leaves a clean tail of 30+ days of post-creation data available for label construction at submission time.
 
-The candidate universe contains [PLACEHOLDER: ~N tokens] after the inclusion filters below.
+The exact size of the candidate universe after applying the §4.2 filters is reported in `reports/universe_summary.md` when the local data store is hydrated, and is inserted here before submission. Studies of comparable Uniswap windows on Ethereum have analyzed populations on the order of tens of thousands of tokens (e.g., Xia et al. 2021; Mazorra et al. 2023); this work targets a population of the same order of magnitude.
 
 ### 4.2 Inclusion criteria
 
@@ -115,7 +115,7 @@ A token is included in the analysis only if:
 
 ### 4.3 Class balance
 
-The estimated base rate of liquidity rugs in the candidate universe is [PLACEHOLDER: ~X%]. For model training, the dataset is *not* artificially rebalanced. SMOTE-style oversampling is rejected on the grounds that it (a) distorts the calibration of the resulting model and (b) introduces synthetic feature combinations that may not be realistic. Class weight is instead handled via cost-sensitive learning (positive weight proportional to inverse class frequency) where the model permits.
+Published analyses of comparable Uniswap V2 / V3 token populations have reported substantial fractions of newly launched tokens exhibiting rug-like behavior, with the precise fraction depending strongly on the operational definition used (Xia et al. 2021; Cernera et al. 2023; Mazorra et al. 2023). The base rate under the operational definition adopted here (§2) is reported in `reports/labeling_summary.md` when the labeling step is run, and is inserted here before submission. For model training, the dataset is *not* artificially rebalanced. SMOTE-style oversampling is rejected on the grounds that it (a) distorts the calibration of the resulting model and (b) introduces synthetic feature combinations that may not be realistic. Class weight is instead handled via cost-sensitive learning (positive weight proportional to inverse class frequency) where the model permits.
 
 ---
 
@@ -218,22 +218,21 @@ For each top-decile prediction, the SHAP feature attribution is logged. A separa
 
 ## 8. Findings
 
-> *[Placeholder until model is trained.]*
->
-> Headline numbers:
->
-> - AUC-PR on the held-out test set: [X]
-> - Precision-at-100: [Y]
-> - Calibration in the top decile: [Z]
->
-> Top five features by mean absolute SHAP value:
->
-> 1. [feature, with brief interpretation]
-> 2. ...
->
-> Notable null results:
->
-> - [feature that was hypothesized to matter but did not]
+*Headline numbers are pending the model run. When complete, they will be inserted in §8.2 below, limited to figures obtained on the held-out temporal test set. If the run is not complete at submission time, this section will be removed rather than padded with placeholders.*
+
+### 8.1 Reporting plan
+
+When the model is trained, this section will report:
+
+- **Discrimination.** AUC-PR on the held-out temporal test set (primary metric per §7.2), with AUC-ROC reported alongside for comparability with prior work.
+- **Calibration.** Reliability diagram across deciles of predicted probability, and Brier score.
+- **Operating points.** Precision-at-k for k ∈ {10, 50, 100}, framed in the language of an investigative triage workflow: "of the top k tokens flagged, what fraction were actually rugs."
+- **Feature attribution.** Top features by mean absolute SHAP value, with stability across bootstrap resamples reported in `notebooks/03_model_validation.ipynb`.
+- **Null results.** Features hypothesized in §5 to matter that did not contribute meaningfully to the model. These are recorded explicitly so the analysis is not a post-hoc story over only the confirming results.
+
+### 8.2 Results
+
+*Forthcoming.*
 
 ---
 
