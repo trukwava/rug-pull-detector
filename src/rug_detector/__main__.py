@@ -26,6 +26,12 @@ def _setup_logging(verbose: bool) -> None:
         format="%(message)s",
         handlers=[RichHandler(console=console, show_path=False)],
     )
+    # httpx and httpcore log full request URLs at INFO. Etherscan's API takes
+    # the API key as a query parameter, so its key would leak into terminal
+    # output and any log files / transcripts. Pin third-party HTTP loggers
+    # to WARNING regardless of our verbose flag.
+    for noisy in ("httpx", "httpcore", "urllib3"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
 @click.group()
