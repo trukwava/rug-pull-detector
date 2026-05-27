@@ -112,8 +112,20 @@ class TheGraphClient:
     # -------- events --------
 
     def mint_burn_events(self, pool_id: str, version: str) -> list[dict]:
-        """All mint+burn events for a single pool."""
+        """All mint+burn events for a single pool.
+
+        V2 vs V3 schema asymmetry: V2 `Mint` carries `to` (LP-token recipient)
+        and V2 `Burn` carries `sender` (the caller). V3 LP positions are NFTs,
+        so V3 `Mint` and `Burn` both use `owner` (the position NFT holder) and
+        have no `to`. We alias `owner` to `to`/`sender` in the V3 responses so
+        downstream code doesn't need to know about the asymmetry.
+        """
         url = self._url(version)
+        # field name we want in the JSON; what to fetch in the subgraph
+        if version == "v2":
+            field_selection = {"mints": "to", "burns": "sender"}
+        else:
+            field_selection = {"mints": "to: owner", "burns": "sender: owner"}
         events = []
         for kind in ("mints", "burns"):
             query = f"""
@@ -129,7 +141,7 @@ class TheGraphClient:
                 transaction {{ id }}
                 amount0
                 amount1
-                {"to" if kind == "mints" else "sender"}
+                {field_selection[kind]}
               }}
             }}
             """
