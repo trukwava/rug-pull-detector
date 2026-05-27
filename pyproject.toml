@@ -1,0 +1,58 @@
+[project]
+name = "rug-detector"
+version = "0.1.0"
+description = "Pre-launch rug-pull risk classifier for ERC-20 tokens on Ethereum."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+    { name = "Trevor Rukwava", email = "trukwava@gmail.com" },
+]
+license = { text = "MIT" }
+dependencies = [
+    "duckdb>=1.0",
+    "httpx>=0.27",
+    "tenacity>=8.2",
+    "pydantic>=2.6",
+    "pydantic-settings>=2.2",
+    "python-dotenv>=1.0",
+    "pandas>=2.2",
+    "numpy>=1.26",
+    "scikit-learn>=1.4",
+    "lightgbm>=4.3",
+    "shap>=0.45",
+    "matplotlib>=3.8",
+    "click>=8.1",
+    "rich>=13.7",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=4.1",
+    "ruff>=0.4",
+    "ipykernel>=6.29",
+    "jupyter>=1.0",
+]
+
+[project.scripts]
+rug-detector = "rug_detector.__main__:cli"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rug_detector"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "N", "SIM"]
+ignore = ["E501"]  # line length handled by formatter
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-ra --strict-markers"
