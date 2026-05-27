@@ -1,6 +1,11 @@
-"""GraphQL client for Uniswap V2 / V3 subgraphs hosted on The Graph.
+"""GraphQL client for Uniswap V2 / V3 subgraphs on The Graph Decentralized Network.
 
-We use the public endpoints; supplying an API key raises the rate limit.
+The Graph sunset its hosted service (api.thegraph.com/subgraphs/name/...) in
+mid-2024. All subgraphs are now served from the decentralized gateway at
+gateway.thegraph.com, which requires an API key from thegraph.com/studio.
+
+The free tier covers 100k queries per month, which is more than enough for
+this project: ~one pools-list query + a handful of event queries per token.
 """
 
 from __future__ import annotations
@@ -18,19 +23,40 @@ from ..config import get_settings
 
 log = logging.getLogger(__name__)
 
-V2_URL = "https://api.thegraph.com/subgraphs/name/uniswap/uniswap-v2"
-V3_URL = "https://api.thegraph.com/subgraphs/name/uniswap/uniswap-v3"
+# Canonical Uniswap subgraph deployment IDs on the decentralized network.
+# Source: https://developers.uniswap.org/api/subgraph/overview
+# These are stable identifiers published by Uniswap Labs.
+SUBGRAPH_IDS = {
+    "v2": "A3Np3RQbaBA6oKJgiwDJeo5T3zrYfGHPWFYayMwtNDum",
+    "v3": "5zvR82QoaXYFyDEKLZ9t6v9adgnptxYpKpSbxtgVENFV",
+}
 
-# Page size — The Graph limits to 1000 per query for skip-based pagination.
+GATEWAY = "https://gateway.thegraph.com/api/{api_key}/subgraphs/id/{subgraph_id}"
+
+# Page size — The Graph caps `first` at 1000 for any query.
 PAGE = 1000
 
 
 class TheGraphClient:
     def __init__(self, cache_root: Path | None = None):
         settings = get_settings()
+        if not settings.thegraph_api_key:
+            raise RuntimeError(
+                "THEGRAPH_API_KEY is not set. The Graph hosted service was "
+                "sunset in 2024; you need an API key from "
+                "https://thegraph.com/studio (free tier: 100k queries/month). "
+                "Add it to .env as THEGRAPH_API_KEY=..."
+            )
+        self._api_key = settings.thegraph_api_key
         self.cache_root = cache_root or (settings.data_raw_dir / "thegraph")
         self.cache_root.mkdir(parents=True, exist_ok=True)
         self._client = httpx.Client(timeout=60.0)
+
+    def _url(self, version: str) -> str:
+        """Build the gateway URL for a given Uniswap version."""
+        if version not in SUBGRAPH_IDS:
+            raise ValueError(f"unknown version {version!r}; expected 'v2' or 'v3'")
+        return GATEWAY.format(api_key=self._api_key, subgraph_id=SUBGRAPH_IDS[version])
 
     def __enter__(self) -> "TheGraphClient":
         return self
@@ -61,7 +87,7 @@ class TheGraphClient:
           }
         }
         """
-        yield from self._paginate(V2_URL, query, since_ts, until_ts, key="pairs")
+        yield from self._paginate(self._url("v2"), query, since_ts, until_ts, key="pairs")
 
     def pools_v3(self, since_ts: int, until_ts: int) -> Iterable[dict]:
         query = """
@@ -81,13 +107,13 @@ class TheGraphClient:
           }
         }
         """
-        yield from self._paginate(V3_URL, query, since_ts, until_ts, key="pools")
+        yield from self._paginate(self._url("v3"), query, since_ts, until_ts, key="pools")
 
     # -------- events --------
 
     def mint_burn_events(self, pool_id: str, version: str) -> list[dict]:
         """All mint+burn events for a single pool."""
-        url = V2_URL if version == "v2" else V3_URL
+        url = self._url(version)
         events = []
         for kind in ("mints", "burns"):
             query = f"""
@@ -122,7 +148,7 @@ class TheGraphClient:
         return events
 
     def swaps(self, pool_id: str, version: str, since_ts: int, until_ts: int) -> list[dict]:
-        url = V2_URL if version == "v2" else V3_URL
+        url = self._url(version)
         field = "pair" if version == "v2" else "pool"
         query = f"""
         query($pool: String!, $lastTs: Int!, $endTs: Int!) {{
@@ -206,7 +232,11 @@ class TheGraphClient:
         v = "_".join(f"{k}={variables[k]}" for k in sorted(variables))
         # Use query's first non-whitespace tokens to disambiguate operations.
         op = "_".join(query.split()[1:4]).replace("(", "").replace(",", "")[:50]
-        chain = "v2" if "v2" in url else "v3"
+        # Derive chain from the subgraph ID embedded in the gateway URL.
+        chain = next(
+            (ver for ver, sid in SUBGRAPH_IDS.items() if sid in url),
+            "unknown",
+        )
         return self.cache_root / date / chain / f"{op}_{v}.json"
 
     def _read_cache(self, path: Path) -> dict | None:
