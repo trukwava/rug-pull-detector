@@ -1,4 +1,9 @@
-"""Thin Etherscan v2 client. Free tier is fine for the historical window.
+"""Thin Etherscan V2 client. Free tier is fine for the historical window.
+
+Etherscan deprecated their V1 API endpoint (api.etherscan.io/api) in favor
+of a unified V2 endpoint (api.etherscan.io/v2/api) that requires an explicit
+`chainid` parameter and uses a single multichain API key. See:
+https://docs.etherscan.io/v2-migration
 
 We intentionally don't try to be a complete Etherscan SDK — just the
 endpoints we need, with retry, rate limiting, and disk caching.
@@ -25,7 +30,11 @@ from ..config import get_settings
 
 log = logging.getLogger(__name__)
 
-BASE = "https://api.etherscan.io/api"
+BASE = "https://api.etherscan.io/v2/api"
+# Ethereum mainnet. The methodology is explicitly Ethereum-only (§4.1);
+# multichain support would require revisiting the operational definition,
+# which is calibrated to Uniswap V2/V3 on this chain.
+CHAIN_ID = 1
 
 
 class EtherscanError(Exception):
@@ -106,7 +115,7 @@ class EtherscanClient:
             return cached
 
         self._rate_limit()
-        params = {**params, "apikey": self.api_key}
+        params = {**params, "chainid": CHAIN_ID, "apikey": self.api_key}
         data = self._request(params)
 
         # Etherscan wraps responses; we return only the result payload.
