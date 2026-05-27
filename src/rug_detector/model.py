@@ -97,10 +97,24 @@ def _prepare_xy(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
 
 
 def train_logistic(train_df: pd.DataFrame, calib_df: pd.DataFrame) -> TrainedModel:
+    """Fit logistic regression with isotonic calibration on a held-out set.
+
+    Three pieces, in order:
+      1. Scaler is fit on the *training* data only. Fitting on train+calib
+         would leak calibration-set statistics into the model's input space
+         and inflate apparent calibration quality.
+      2. Base logistic is fit on the scaled training data with balanced
+         class weights (positive class is the minority — rugs).
+      3. CalibratedClassifierCV with cv="prefit" then wraps the fitted base
+         and applies isotonic calibration using only the held-out calib set.
+         This preserves the temporal split: train → fit, calib → calibrate,
+         test (passed to evaluate()) → measure.
+    """
     X_train, y_train = _prepare_xy(train_df)
-    X_calib, _       = _prepare_xy(calib_df)
-    scaler = StandardScaler().fit(pd.concat([X_train, X_calib]))
-    Xs = scaler.transform(X_train)
+    X_calib, y_calib = _prepare_xy(calib_df)
+
+    scaler = StandardScaler().fit(X_train)
+
     base = LogisticRegression(
         penalty="l2",
         C=1.0,
@@ -108,15 +122,11 @@ def train_logistic(train_df: pd.DataFrame, calib_df: pd.DataFrame) -> TrainedMod
         max_iter=2000,
         solver="lbfgs",
     )
-    # Wrap with isotonic calibration on a held-out calibration set
-    model = CalibratedClassifierCV(base, method="isotonic", cv="prefit").fit(
-        # CalibratedClassifierCV requires cv="prefit" + a pre-fit base;
-        # we have to fit base first.
-        scaler.transform(X_train), y_train,
-    )
-    base.fit(Xs, y_train)
+    base.fit(scaler.transform(X_train), y_train)
+
     model = CalibratedClassifierCV(base, method="isotonic", cv="prefit")
-    model.fit(scaler.transform(X_calib), _prepare_xy(calib_df)[1])
+    model.fit(scaler.transform(X_calib), y_calib)
+
     return TrainedModel(model=model, scaler=scaler, feature_cols=FEATURE_COLS, kind="logistic")
 
 
