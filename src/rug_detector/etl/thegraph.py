@@ -10,6 +10,7 @@ this project: ~one pools-list query + a handful of event queries per token.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from datetime import datetime, timezone
@@ -239,17 +240,42 @@ class TheGraphClient:
         return data
 
     def _cache_key(self, url: str, query: str, variables: dict) -> Path:
-        # Hash-free cache: variables are simple enough to stringify.
+        """Build a cache path that uniquely identifies a (url, query, variables) tuple.
+
+        Bug history: an earlier version used only the first 4 query tokens to
+        disambiguate operations. For Uniswap V2 mint/burn queries, those tokens
+        are identical (`query($pool: String!, $lastTs: Int!)`), and the entity
+        name (`mints` vs `burns`) appears at token 5. When variables were also
+        the same (both queries use {pool, lastTs}), mint and burn queries
+        collided onto the same cache file, and whichever ran second silently
+        served the other's response. Burns were invisibly dropped.
+
+        Fix: hash the full (query, variables) tuple so the key reflects every
+        byte the gateway would see. SHA-1 truncated to 16 hex chars is enough
+        for the populations we're caching against and stays filesystem-safe.
+        """
         date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        v = "_".join(f"{k}={variables[k]}" for k in sorted(variables))
-        # Use query's first non-whitespace tokens to disambiguate operations.
-        op = "_".join(query.split()[1:4]).replace("(", "").replace(",", "")[:50]
+        # Stable canonical form so equivalent calls hash identically.
+        payload = json.dumps({"q": query.strip(), "v": variables}, sort_keys=True)
+        digest = hashlib.sha1(payload.encode("utf-8")).hexdigest()[:16]
+        # Keep a short human-readable hint in the filename: the entity name
+        # (mints/burns/swaps/pairs/pools) makes the cache directory greppable
+        # during debugging without affecting key uniqueness.
+        hint = self._operation_hint(query)
         # Derive chain from the subgraph ID embedded in the gateway URL.
         chain = next(
             (ver for ver, sid in SUBGRAPH_IDS.items() if sid in url),
             "unknown",
         )
-        return self.cache_root / date / chain / f"{op}_{v}.json"
+        return self.cache_root / date / chain / f"{hint}_{digest}.json"
+
+    @staticmethod
+    def _operation_hint(query: str) -> str:
+        """Best-effort entity-name extractor for human-readable filenames."""
+        for word in ("mints", "burns", "swaps", "pairs", "pools"):
+            if word + "(" in query.replace(" ", ""):
+                return word
+        return "query"
 
     def _read_cache(self, path: Path) -> dict | None:
         if not path.exists():
