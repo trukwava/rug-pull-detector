@@ -31,7 +31,10 @@ venv/
 .vscode/
 .idea/
 
-# Reports — keep methodology, not generated outputs
+# Reports — keep methodology and training_results.json,
+# but not large/regenerable artifacts like model pickles or plots.
 reports/*.png
 reports/*.csv
+reports/*.pkl
 !reports/methodology.md
+!reports/training_results.json

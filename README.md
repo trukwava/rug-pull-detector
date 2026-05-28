@@ -55,10 +55,10 @@ Pool:         Uniswap V2, created 2024-03-15 14:22 UTC
 Risk score:   0.87  (decile 10 / "high")
 
 Top contributing features:
-  +0.31   deployer_wallet_age_days < 1
-  +0.22   liquidity_lock_duration_days == 0
-  +0.18   top5_holder_concentration > 0.90
-  +0.11   contract_has_mintable_owner == True
+  +0.31   deployer_prior_rugs > 0
+  +0.22   initial_liquidity_quote < 0.5_ETH
+  +0.18   lp_holder_concentration_t0 > 0.90
+  +0.11   concurrent_token_deployments_24h > 100
   +0.05   pool_creation_hour_utc ∈ {0,1,2,3}
 ```
 
@@ -66,7 +66,24 @@ Top contributing features:
 
 ## Headline findings
 
-> *[To be filled in after model run on full dataset. If empty at submission time, this section will be removed rather than shipped with placeholders.]*
+Trained and evaluated on a three-day sample of pool creations from **2024-06-01 to 2024-06-03** (1,213 tokens, of which 317 satisfy the operational rug definition for a base rate of **26.1%**, Wilson 95% CI [23.7%, 28.7%]). Temporal 60 / 20 / 20 train / calibration / test split.
+
+| Metric                  | Logistic | LightGBM (production) |
+|-------------------------|----------|-----------------------|
+| AUC-PR                  | 0.316    | **0.403**             |
+| AUC-ROC                 | 0.596    | **0.703**             |
+| Brier                   | 0.189    | 0.178                 |
+| Precision @ top 100     | 0.40     | **0.41**              |
+
+LightGBM lifts precision-at-100 from the **27% test base rate** to **41%** — a 1.5× improvement for an investigative-triage workflow reviewing the most suspicious tokens in a one-day candidate stream. Logistic regression provides minimal lift on this sample (AUC-ROC 0.60), suggesting the predictive signal lives in feature interactions rather than linear effects.
+
+**Important caveats** (full discussion in [`reports/methodology.md`](reports/methodology.md) §8.2 and §10.2):
+- Single three-day window, no temporal-robustness validation across regimes
+- V3 rugs are systematic false negatives in this version (V3 LP-NFT modeling gap); the 0% V3 base rate is a detection artifact, not a real-world observation
+- 5 of 17 features described in the methodology are unimplemented for data-source reasons
+- Subgraph-derived event ordering is approximate within blocks
+
+Raw metrics: [`reports/training_results.json`](reports/training_results.json).
 
 ---
 
