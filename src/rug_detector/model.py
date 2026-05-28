@@ -20,6 +20,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from sklearn.calibration import CalibratedClassifierCV
+from sklearn.frozen import FrozenEstimator
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
     average_precision_score,
@@ -39,14 +40,30 @@ from .features import BOOL_COLS, CATEGORICAL_COLS, load_features
 log = logging.getLogger(__name__)
 
 
-SPLIT_TRAIN_END = "2024-03-31"
-SPLIT_CALIB_END = "2024-05-31"
+# Temporal-split fractions (train / calibration / test), applied to the
+# sample sorted by T₀. The split is percentile-based rather than tied to
+# hard-coded dates so the same code works whether the sample spans 3 days
+# or 3 years. Temporal ordering is preserved: every test-set T₀ is later
+# than every calibration T₀, which is later than every training T₀.
+SPLIT_TRAIN_FRAC = 0.60
+SPLIT_CALIB_FRAC = 0.20
+# Test fraction is the remainder.
 
 
 # Features the model sees. Excludes IDs, timestamps, and the bytecode_hash
 # (which feeds the similarity feature computed separately).
+#
+# Several features described in methodology §5 are commented out here
+# because they require data sources we do not currently fetch:
+#   - deployer_wallet_age_days: needs deployer's full tx history (>10x
+#     additional Etherscan calls per token); deferred.
+#   - top5_holder_concentration, holder_count_t0, share_supply_in_pool:
+#     need an enumeration of token holders, which Etherscan's free tier
+#     only partially supports and which the V2/V3 subgraphs do not expose.
+# These are documented as a known gap in methodology §10 ("sources of
+# imprecision") rather than silently imputed.
 FEATURE_COLS = [
-    "deployer_wallet_age_days",
+    # "deployer_wallet_age_days",        # see comment above
     "deployer_prior_token_deployments",
     "deployer_prior_rugs",
     "initial_liquidity_quote",
@@ -54,9 +71,9 @@ FEATURE_COLS = [
     "pool_creation_dow",
     "lp_holder_concentration_t0",
     "log_total_supply",
-    "top5_holder_concentration",
-    "holder_count_t0",
-    "share_supply_in_pool",
+    # "top5_holder_concentration",       # see comment above
+    # "holder_count_t0",                 # see comment above
+    # "share_supply_in_pool",            # see comment above
     "concurrent_token_deployments_24h",
 ] + BOOL_COLS
 
@@ -76,13 +93,29 @@ class TrainedModel:
 
 
 def temporal_split(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Split a feature dataframe by T₀ into train / calibration / test."""
+    """Split a feature dataframe by T₀ into train / calibration / test.
+
+    Percentile-based on T₀ so the split scales with any sample window. The
+    earliest SPLIT_TRAIN_FRAC of tokens (by pool-creation time) are training,
+    the next SPLIT_CALIB_FRAC are calibration, and the remainder is the
+    held-out test set. Temporal ordering is preserved end-to-end: every
+    test-set T₀ ≥ every calibration T₀ ≥ every training T₀.
+    """
     df = df.copy()
     df["t0"] = pd.to_datetime(df["t0"])
-    train = df[df["t0"] <= SPLIT_TRAIN_END]
-    calib = df[(df["t0"] > SPLIT_TRAIN_END) & (df["t0"] <= SPLIT_CALIB_END)]
-    test  = df[df["t0"] > SPLIT_CALIB_END]
-    log.info("Split sizes — train=%d calib=%d test=%d", len(train), len(calib), len(test))
+    df = df.sort_values("t0", kind="stable").reset_index(drop=True)
+    n = len(df)
+    n_train = int(n * SPLIT_TRAIN_FRAC)
+    n_calib = int(n * SPLIT_CALIB_FRAC)
+    train = df.iloc[:n_train]
+    calib = df.iloc[n_train : n_train + n_calib]
+    test = df.iloc[n_train + n_calib :]
+    log.info(
+        "Split — train=%d (T₀≤%s) calib=%d (T₀≤%s) test=%d (T₀≤%s)",
+        len(train), train["t0"].max() if len(train) else "-",
+        len(calib), calib["t0"].max() if len(calib) else "-",
+        len(test),  test["t0"].max()  if len(test)  else "-",
+    )
     return train, calib, test
 
 
@@ -124,7 +157,11 @@ def train_logistic(train_df: pd.DataFrame, calib_df: pd.DataFrame) -> TrainedMod
     )
     base.fit(scaler.transform(X_train), y_train)
 
-    model = CalibratedClassifierCV(base, method="isotonic", cv="prefit")
+    # sklearn 1.8 removed cv="prefit" in favor of explicit FrozenEstimator —
+    # see https://scikit-learn.org/stable/modules/generated/sklearn.frozen.FrozenEstimator.html
+    # Functionally equivalent: the frozen base is not re-fit; isotonic
+    # calibration is fit on the held-out calibration set only.
+    model = CalibratedClassifierCV(FrozenEstimator(base), method="isotonic")
     model.fit(scaler.transform(X_calib), y_calib)
 
     return TrainedModel(model=model, scaler=scaler, feature_cols=FEATURE_COLS, kind="logistic")
@@ -151,7 +188,8 @@ def train_lightgbm(train_df: pd.DataFrame, calib_df: pd.DataFrame) -> TrainedMod
         eval_set=[(X_calib, y_calib)],
         callbacks=[lgb.early_stopping(stopping_rounds=30, verbose=False)],
     )
-    model = CalibratedClassifierCV(base, method="isotonic", cv="prefit")
+    # sklearn 1.8: cv="prefit" → FrozenEstimator. See train_logistic.
+    model = CalibratedClassifierCV(FrozenEstimator(base), method="isotonic")
     model.fit(X_calib, y_calib)
     return TrainedModel(model=model, scaler=None, feature_cols=FEATURE_COLS, kind="lightgbm")
 
