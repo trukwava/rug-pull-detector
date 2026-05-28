@@ -64,6 +64,21 @@ WHERE rn = 1;
 --
 -- DuckDB disallows nesting window functions (LAG(SUM() OVER) OVER),
 -- so we compute running totals in one CTE and LAG over them in the next.
+--
+-- Ordering note: The Graph V2/V3 subgraphs do not expose block_number
+-- or log_index on mint/burn/swap entities, so those columns are stored
+-- as zeros by the ETL runner (etl/runner.py). An earlier version of this
+-- view ordered by (block_number, log_index), which meant every event
+-- collided at (0, 0) and the cumulative sum's order was undefined —
+-- in practice token1_reserve_before == token1_reserve on every row,
+-- and no burn ever crossed the D1 80% threshold.
+--
+-- We order by block_time (which IS populated, from event.timestamp) with
+-- tx_hash as a deterministic tiebreaker. Intra-block ordering between
+-- distinct transactions is approximate, but rugs typically dominate
+-- their block (deployer drains everything in a single tx), so the
+-- approximation does not affect labeling accuracy in practice. The
+-- limitation is documented in methodology §10 (sources of imprecision).
 -- ---------------------------------------------------------------
 CREATE OR REPLACE VIEW pool_reserves AS
 WITH running AS (
@@ -81,12 +96,12 @@ WITH running AS (
         SUM(amount0_delta) OVER w AS token0_reserve,
         SUM(amount1_delta) OVER w AS token1_reserve
     FROM pool_events
-    WINDOW w AS (PARTITION BY pool_address ORDER BY block_number, log_index)
+    WINDOW w AS (PARTITION BY pool_address ORDER BY block_time, tx_hash)
 )
 SELECT
     *,
-    LAG(token0_reserve) OVER (PARTITION BY pool_address ORDER BY block_number, log_index)
+    LAG(token0_reserve) OVER (PARTITION BY pool_address ORDER BY block_time, tx_hash)
         AS token0_reserve_before,
-    LAG(token1_reserve) OVER (PARTITION BY pool_address ORDER BY block_number, log_index)
+    LAG(token1_reserve) OVER (PARTITION BY pool_address ORDER BY block_time, tx_hash)
         AS token1_reserve_before
 FROM running;
