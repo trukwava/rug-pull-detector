@@ -131,6 +131,8 @@ def _insert_pools(db: duckdb.DuckDBPyConnection, batch: list[dict], version: str
             None,                          # pool_deployer: filled by load_tokens step (see TODO)
             int(p.get("feeTier", 0)) if version == "v3" else None,
         ))
+    if not rows:
+        return
     db.executemany("""
         INSERT OR REPLACE INTO pools
         (pool_address, token0, token1, version, factory, creation_block,
@@ -186,6 +188,14 @@ def _insert_pool_events(
             amt0,
             amt1,
         ))
+    # A pool can legitimately have zero mint/burn/swap events in its first
+    # 31 days (it was created but never funded, or its activity falls outside
+    # our swap window). DuckDB's executemany rejects an empty parameter list,
+    # so short-circuit. Skipping the insert leaves the pool with no rows in
+    # pool_events, which is the correct outcome and is handled by downstream
+    # labeling (such pools fail D1/D2/D3 trivially).
+    if not rows:
+        return
     # log_index conflicts: we synthesise per-tx via row_number on insert.
     # In production we'd source log_index from the event log directly.
     db.executemany("""
@@ -231,6 +241,8 @@ def _insert_lp_transfers(db: duckdb.DuckDBPyConnection, pool_addr: str, transfer
         )
         for t in transfers
     ]
+    if not rows:
+        return
     db.executemany("""
         INSERT OR REPLACE INTO lp_transfers
         (pool_address, block_number, block_time, tx_hash, log_index,
