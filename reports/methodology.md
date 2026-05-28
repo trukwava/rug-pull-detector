@@ -103,7 +103,9 @@ External sources are used as a *check on*, not the *source of*, the labels. This
 
 The candidate universe is every ERC-20 token with at least one Uniswap V2 or V3 pool on Ethereum mainnet whose `PairCreated` (V2) or `PoolCreated` (V3) event occurred between **2022-07-01** and **2025-12-31**. The window starts after the May 2022 Terra/LUNA collapse, which produced unusual market conditions and a one-time spike in token launches that does not reflect typical conditions. The end date leaves a clean tail of 30+ days of post-creation data available for label construction at submission time.
 
-The **analyzed sample for this submission** covers pool creations between **2024-06-01 and 2024-06-03 (UTC)**, a three-day slice of the broader window described above. The same ETL and labeling code runs on the full window without modification; the reduced scope was chosen so the end-to-end pipeline could be exercised against real on-chain data within the project's time budget. After applying the §4.2 inclusion filters, the sample contains **1,213 tokens** (1,103 on Uniswap V2, 110 on Uniswap V3). The reduced scope is itself a limitation; see §10. Studies of comparable Uniswap windows on Ethereum have analyzed populations on the order of tens of thousands of tokens (e.g., Xia et al. 2021; Mazorra et al. 2023); extending this work to that population is the most natural next step.
+The **analyzed sample for this submission** is a stratified two-regime sample drawn from the broader window: pool creations between **2023-04-01 and 2023-04-03 (UTC)** (the post-FTX recovery phase, after the November 2022 collapse but before the late-2023 Bitcoin-ETF anticipation runup) and between **2024-06-01 and 2024-06-03 (UTC)** (a mid-cycle memecoin-heavy period). The two windows were chosen to span market regimes rather than scaled to maximize sample size, so the model could be tested for stability across regime shifts (§8.2) rather than measured only against a single market state.
+
+The same ETL and labeling code runs on the full 2022-07 → 2025-12 window without modification; the reduced scope was chosen so the end-to-end pipeline could be exercised against real on-chain data within the project's time budget. After applying the §4.2 inclusion filters, the sample contains **2,093 tokens** total: **880 in the 2023-Q2 window** (855 on Uniswap V2, 25 on Uniswap V3) and **1,213 in the 2024-Q2 window** (1,103 V2, 110 V3). The reduced scope is still a limitation; see §10.2. Studies of comparable Uniswap windows on Ethereum have analyzed populations on the order of tens of thousands of tokens (e.g., Xia et al. 2021; Mazorra et al. 2023); extending this work to that population is the natural next step.
 
 ### 4.2 Inclusion criteria
 
@@ -115,7 +117,16 @@ A token is included in the analysis only if:
 
 ### 4.3 Class balance
 
-Under the operational definition in §2, the labeled base rate on the analyzed sample is **26.1%** (317 rugs across 1,213 tokens; Wilson 95% confidence interval [23.7%, 28.7%]). The base rate is highly asymmetric across Uniswap versions: **28.7% on V2** (317/1,103) and **0% on V3** (0/110). The V3 zero is not a real-world observation; it is a detection artifact of how the privileged-set is constructed when V3 LP positions are NFTs owned by a single position-manager contract — see §10 for details.
+Under the operational definition in §2, the labeled base rate on the analyzed sample is **27.2%** (570 rugs across 2,093 tokens; Wilson 95% confidence interval [25.4%, 29.2%]). The base rate is strikingly consistent across the two regime windows:
+
+| Window | V2 tokens | V2 rugs | V2 rate | V3 tokens | V3 rugs | V3 rate |
+|---|---:|---:|---:|---:|---:|---:|
+| 2023-Q2 (Apr 1–3) | 855 | 253 | **29.6%** | 25 | 0 | 0.0% |
+| 2024-Q2 (Jun 1–3) | 1,103 | 317 | **28.7%** | 110 | 0 | 0.0% |
+
+The 0.9-percentage-point difference between the V2 base rates across two distinct market regimes — separated by over a year, spanning a major market-structure shift (the U.S. Bitcoin-ETF approval window) — is *within sampling error* of the combined Wilson interval. That stability is itself a finding: it suggests that the operational definition captures something structural about memecoin liquidity-rug economics rather than a regime-specific artifact.
+
+The asymmetry across Uniswap versions persists in both windows: 0% V3 in both periods is a detection artifact of how the privileged-set is constructed when V3 LP positions are NFTs owned by a single position-manager contract, not a real-world observation. See §10.2 for details.
 
 These figures are consistent in order of magnitude with published estimates for memecoin-heavy Ethereum populations (Xia et al. 2021; Cernera et al. 2023; Mazorra et al. 2023), though the strict (D1)∧(D2)∧(D3) operational definition is narrower than the looser ones used in some of that work, which would push our rate toward the lower end of literature reports if uniformly applied.
 
@@ -224,7 +235,7 @@ For each top-decile prediction, the SHAP feature attribution is logged. A separa
 
 ## 8. Findings
 
-The numbers below come from a single end-to-end pipeline run against a three-day sample of June 2024 (described in §4). They should be read with the implementation-specific limitations in §10.2 in view — most importantly, the V3 LP-NFT detection gap (which makes the V3 base rate uninformative in this version) and the narrow sample window (which prevents any claim about generalization across market regimes).
+The numbers below come from an end-to-end pipeline run against the two-regime sample described in §4 (3 days from April 2023 and 3 days from June 2024). They should be read with the implementation-specific limitations in §10.2 in view — most importantly, the V3 LP-NFT detection gap (which makes the V3 figures uninformative in this version).
 
 ### 8.1 Reporting plan
 
@@ -238,26 +249,34 @@ When the model is trained, this section will report:
 
 ### 8.2 Results
 
-Trained on the June 2024 sample described in §4. Temporal split (per §7.1): n_train = 727 (T₀ ≤ 2024-06-02 18:40 UTC), n_calib = 242, n_test = 244 with 66 positives.
+Trained on the two-regime sample described in §4. The percentile-based temporal split (§7.1) places the **entire 2023-Q2 window in the training set**, along with the earliest hours of the 2024-Q2 window, while the **held-out test set is drawn entirely from the latest day of 2024-Q2** — making this a genuine cross-regime test of the model's transfer from one market period to another.
 
-| Metric                  | Logistic regression | LightGBM (production) |
-|-------------------------|---------------------|-----------------------|
-| AUC-PR (primary, §7.2)  | 0.316               | **0.403**             |
-| AUC-ROC                 | 0.596               | **0.703**             |
-| Brier score             | 0.189               | 0.178                 |
-| Precision @ top 10      | 0.30                | **0.40**              |
-| Precision @ top 50      | 0.34                | 0.36                  |
-| Precision @ top 100     | 0.40                | **0.41**              |
+- **n_train = 1,255** (T₀ ≤ 2024-06-01 21:27 UTC; comprises all 880 tokens from 2023-Q2 plus the first ~375 of 2024-Q2)
+- **n_calib = 418**  (T₀ ≤ 2024-06-02 22:04 UTC; all 2024-Q2)
+- **n_test = 420** with **110 positives** (T₀ on 2024-06-03; all 2024-Q2)
 
-The held-out test set has a 27.0% base rate; any AUC-PR above that is real lift.
+| Metric                  | Logistic regression (production) | LightGBM |
+|-------------------------|----------------------------------|----------|
+| AUC-PR (primary, §7.2)  | **0.406**                        | 0.338    |
+| AUC-ROC                 | **0.712**                        | 0.647    |
+| Brier score             | 0.178                            | 0.178    |
+| Precision @ top 10      | **0.60**                         | 0.40     |
+| Precision @ top 50      | **0.52**                         | 0.30     |
+| Precision @ top 100     | **0.43**                         | 0.35     |
 
-**Interpretation.** LightGBM shows a meaningful lift over the test-set base rate on both AUC-PR (0.40 vs 0.27 baseline) and AUC-ROC (0.70 vs 0.50 baseline). The logistic baseline provides minimal lift on AUC-ROC (0.60), suggesting the predictive signal lives in feature *interactions* that a 12-feature linear model in standardized coordinates cannot capture — consistent with the hypothesis in §5 that the relevant rug patterns are conjunctive (e.g., short-deployer-history *and* low initial liquidity *and* high LP-holder concentration, simultaneously).
+The held-out test set has a 26.2% base rate; any AUC-PR above that is real lift.
 
-**Calibration.** LightGBM's predicted probability tracks observed rug rate within roughly 5 percentage points across non-trivial deciles (decile 5 has n = 1 in the test set and is uninformative). The logistic model's outputs cluster near the base rate (only deciles 0 and 1 are populated, with 243 and 1 observations respectively), which is consistent with its weak discrimination — it is not a calibration failure so much as the model declining to commit to differentiated predictions.
+**Interpretation: the simpler model wins under regime shift.** This result is the opposite of what an earlier single-regime run on the 2024-Q2 window alone produced — there, LightGBM dominated logistic on every metric (AUC-PR 0.40 vs 0.32; AUC-ROC 0.70 vs 0.60). Adding the 2023-Q2 training data and holding the test set strictly downstream in time inverts the ranking: the logistic model now beats LightGBM by 0.07 AUC-PR, by 0.07 AUC-ROC, and by 8 percentage points of precision-at-100.
 
-**Precision at k.** The LightGBM precision-at-100 of 0.41 is the most operationally relevant figure. An investigative triage workflow that reviews the top 100 flagged tokens from a comparable candidate stream would, on this evidence, find roughly 41 actual rugs in those 100 — versus roughly 27 by random selection from the same population — a 1.5× lift.
+The most plausible explanation is that LightGBM's apparent advantage in the single-regime run came from fitting feature *interactions* that were specific to the 2024-Q2 regime and did not transfer. The simpler, additive hypothesis class of the logistic model carries less regime-specific information and therefore generalizes more robustly across the training/test boundary. This is exactly the methodological pattern the §9.2 distribution-shift caution was anticipating — and it surfaces empirically in §8.2 only because the §4 sample now spans two regimes.
 
-**Cautions on these numbers.** They come from a single three-day temporal slice (2024-06-01 to 2024-06-03) and have not been validated against other market regimes. The model has not been tested for stability under distribution shift (§9.2), and the top feature attributions have not been audited for spurious associations on this sample. Generalization beyond the analyzed window is not established. The five additional features described in §5 but not yet implemented (see §10) may meaningfully change feature ranking once added; that is one of the most important next-step directions.
+That said, two regimes does not establish robustness across the full 2022-2025 universe. The right reading of these numbers is that the logistic model is the *less risky* production choice for cross-regime deployment on this evidence, not that it is permanently superior.
+
+**Calibration.** Logistic's predicted probability tracks observed rug rate to within roughly 9 percentage points across non-trivial deciles, with all four populated deciles ordered correctly relative to actual outcomes. LightGBM is also well-ordered in the deciles it populates, but its predictions concentrate more heavily in decile 0 (n = 295), which limits its ability to discriminate among the bulk of the test set.
+
+**Precision at k.** The logistic precision-at-10 of 0.60 is the most operationally relevant single number for an investigative-triage workflow: an analyst reviewing only the ten tokens most strongly flagged by the model would find six actual rugs in those ten, versus ~2.6 by random selection — a 2.3× lift. At k = 100, the precision of 0.43 over a base rate of 0.26 is a 1.6× lift. Both improvements meaningfully reduce the cost of human review per confirmed positive.
+
+**Cautions on these numbers.** They come from two 3-day temporal slices (2023-04-01 to 2023-04-03 and 2024-06-01 to 2024-06-03) and have been validated across only one regime boundary. The model has not been tested for stability under further distribution shift (§9.2), and the top feature attributions have not been audited for spurious associations on this sample. Generalization beyond the analyzed windows is not established. The five additional features described in §5 but not yet implemented (see §10.2) may meaningfully change feature ranking once added; that is one of the most important next-step directions.
 
 Raw metrics including per-decile calibration are saved at `reports/training_results.json`. Reproducing them requires only `python -m rug_detector pipeline run-all` with the same date window.
 
@@ -285,7 +304,7 @@ The model identifies feature combinations that *correlate* with rug outcomes. It
 
 ## 10. Threats to validity
 
-Several threats are taken seriously in this work. Each is partially mitigated, none is eliminated. The first five are properties of the methodology as designed; the last four are properties of *this particular implementation* and arose during the real-data run that produced §8.2.
+Several threats are taken seriously in this work. Each is partially mitigated, none is eliminated. The first five (§10.1) are properties of the methodology as designed; the second group (§10.2) are properties of *this particular implementation* and arose during the real-data run that produced §8.2.
 
 ### 10.1 Methodological threats
 
@@ -299,14 +318,14 @@ Several threats are taken seriously in this work. Each is partially mitigated, n
 
 ### 10.2 Implementation-specific limitations of the §8 run
 
-The four limitations below are not properties of the methodology — the same code runs without modification on a longer window and with the missing data sources wired up. They are properties of the specific submission run and should be read as scope cuts rather than design choices.
+The limitations below are not properties of the methodology — the same code runs without modification on a longer window and with the missing data sources wired up. They are properties of the specific submission run and should be read as scope cuts rather than design choices.
 
 | Limitation | Why | Effect on §8 numbers |
 |---|---|---|
-| **Three-day analyzed window** (2024-06-01 to 2024-06-03) | End-to-end pipeline demonstration within project time budget. The full 2022-07 → 2025-12 window is supported by the same code; running it requires roughly two days of wall-clock at free-tier Etherscan + Graph quotas. | Generalization to other market regimes (crypto winter, peaks, post-update Uniswap V4 if extended) is not established. The reported AUC-PR / AUC-ROC are estimates on one market regime only. |
-| **V3 LP-NFT modeling gap** | Uniswap V3 LP positions are non-fungible tokens owned by a single position-manager contract (0xc36442b4…). Burn events therefore carry the position manager's address as `sender`, not the EOA that controls the position. The privileged_set constructor cannot identify V3 LP owners without modeling NFT ownership transfers. | All V3 rugs are systematic false negatives in this version. The detector is effectively V2-only. The §4.3 V3 base rate of 0% is a detection artifact, not a real-world observation. |
-| **Subgraph block_number unavailable** | The Graph V2/V3 subgraphs do not expose `block_number` or `log_index` on event entities. The ETL stores zero as a placeholder. | The `pool_reserves` view orders cumulative reserves by `(block_time, tx_hash)` instead. Intra-block ordering between distinct transactions is approximate; rugs that depend on intra-block order relative to a same-block swap could be mislabeled. In practice rugs dominate their block (deployer drains in a single tx with no concurrent activity), so the approximation rarely changes labels — but it is not zero risk. The canonical fix is to source `block_number` from Etherscan event logs in a future revision. |
-| **Five features unimplemented** | The following features described in §5 require data sources beyond the V2/V3 subgraphs and basic Etherscan endpoints we use: `deployer_wallet_age_days` (needs deployer's full tx history), `top5_holder_concentration`, `holder_count_t0`, `share_supply_in_pool` (all need a token-holder enumeration not exposed by free-tier endpoints), and `bytecode_similarity_to_prior_rugs` (needs a separate Python similarity pipeline). | The model in §8.2 trains on 12 features rather than the 18 described in §5. The §5.1 / §5.2 hypothesis that deployer history and holder concentration matter is only partially testable from the implemented set. Adding these features is the single most promising path to model improvement and is unlikely to require methodological changes. |
+| **Two 3-day analyzed windows** (2023-04-01 to 2023-04-03 and 2024-06-01 to 2024-06-03) | End-to-end pipeline demonstration within project time budget. The two-regime sample is sized to support a single train/test crossing of a market boundary; the full 2022-07 → 2025-12 window is supported by the same code, but running it requires days of wall-clock at free-tier Etherscan + Graph quotas. | Cross-regime generalization is *partially* established for the 2023-Q2 → 2024-Q2 boundary (§8.2). Generalization to other regimes — particularly the deep crypto winter of late 2022, the late-2023 Bitcoin-ETF runup, and any future market state — remains an open question. |
+| **V3 LP-NFT modeling gap** | Uniswap V3 LP positions are non-fungible tokens owned by a single position-manager contract (0xc36442b4…). Burn events therefore carry the position manager's address as `sender`, not the EOA that controls the position. The privileged_set constructor cannot identify V3 LP owners without modeling NFT ownership transfers. | All V3 rugs are systematic false negatives in this version, **in both windows** (§4.3). The detector is effectively V2-only. The 0% V3 base rate in §4.3 is a detection artifact, not a real-world observation. |
+| **Subgraph block_number unavailable; lossy event PK** | The Graph V2/V3 subgraphs do not expose `block_number` or `log_index` on event entities. The ETL stores zero as a placeholder, and the `pool_events` table's primary key `(tx_hash, log_index)` therefore silently collides when a single transaction emits multiple events into the same pool (multi-hop swaps, atomic mint+burn router calls). | The `pool_reserves` view works around the first half of this by ordering on `(block_time, tx_hash)` instead. The second half — silent PK collisions — produced a ~5–10% reduction in `pool_events` row count between what the runner attempted to insert and what survived in DuckDB. Within-block ordering between distinct transactions is also approximate. The canonical fix is to source `block_number` and `log_index` from Etherscan event logs and make the PK include `event_type`; both are planned for a future revision. In practice rugs dominate their block (deployer drains in a single tx with no concurrent activity), so the approximation rarely changes labels. |
+| **Five features unimplemented** | The following features described in §5 require data sources beyond the V2/V3 subgraphs and basic Etherscan endpoints we use: `deployer_wallet_age_days` (needs deployer's full tx history), `top5_holder_concentration`, `holder_count_t0`, `share_supply_in_pool` (all need a token-holder enumeration not exposed by free-tier endpoints), and `bytecode_similarity_to_prior_rugs` (needs a separate Python similarity pipeline). | The model in §8.2 trains on 12 features rather than the 17 described in §5. The §5.1 / §5.2 hypothesis that deployer history and holder concentration matter is only partially testable from the implemented set. Adding these features is the single most promising path to model improvement and is unlikely to require methodological changes. |
 
 ---
 

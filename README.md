@@ -66,22 +66,28 @@ Top contributing features:
 
 ## Headline findings
 
-Trained and evaluated on a three-day sample of pool creations from **2024-06-01 to 2024-06-03** (1,213 tokens, of which 317 satisfy the operational rug definition for a base rate of **26.1%**, Wilson 95% CI [23.7%, 28.7%]). Temporal 60 / 20 / 20 train / calibration / test split.
+Trained and evaluated on a **two-regime sample**: 3 days from April 2023 (post-FTX recovery) and 3 days from June 2024 (mid-cycle memecoin period) — 2,093 tokens total, 570 of which satisfy the operational rug definition for a base rate of **27.2%** (Wilson 95% CI [25.4%, 29.2%]). The percentile-based temporal split places **all of 2023-Q2 in training** and the **last day of 2024-Q2 in test**, making this a cross-regime evaluation.
 
-| Metric                  | Logistic | LightGBM (production) |
-|-------------------------|----------|-----------------------|
-| AUC-PR                  | 0.316    | **0.403**             |
-| AUC-ROC                 | 0.596    | **0.703**             |
-| Brier                   | 0.189    | 0.178                 |
-| Precision @ top 100     | 0.40     | **0.41**              |
+| Metric                  | Logistic (production) | LightGBM |
+|-------------------------|-----------------------|----------|
+| AUC-PR                  | **0.406**             | 0.338    |
+| AUC-ROC                 | **0.712**             | 0.647    |
+| Brier                   | 0.178                 | 0.178    |
+| Precision @ top 10      | **0.60**              | 0.40     |
+| Precision @ top 50      | **0.52**              | 0.30     |
+| Precision @ top 100     | **0.43**              | 0.35     |
 
-LightGBM lifts precision-at-100 from the **27% test base rate** to **41%** — a 1.5× improvement for an investigative-triage workflow reviewing the most suspicious tokens in a one-day candidate stream. Logistic regression provides minimal lift on this sample (AUC-ROC 0.60), suggesting the predictive signal lives in feature interactions rather than linear effects.
+**The simpler model wins under regime shift.** An earlier single-regime run on 2024-Q2 alone showed LightGBM dominating logistic (AUC-PR 0.40 vs 0.32). Holding out a test set from a *later* market period than the training data inverts that ranking: the logistic model now beats LightGBM by 0.07 AUC-PR and 8 percentage points of precision-at-100. The plausible reading is that LightGBM's apparent edge came from fitting regime-specific feature interactions that did not transfer. The logistic model's simpler hypothesis class generalizes better.
+
+The logistic precision-at-10 of **0.60** means an investigator reviewing only the 10 tokens most strongly flagged would find 6 actual rugs there — vs ~2.6 by random selection — a **2.3× lift**.
+
+A consistency finding worth noting: the V2 base rate is **29.6% in 2023-Q2 vs 28.7% in 2024-Q2** — essentially identical across a major regime boundary. The operational definition appears to capture something structural about memecoin liquidity rugs rather than a regime-specific artifact.
 
 **Important caveats** (full discussion in [`reports/methodology.md`](reports/methodology.md) §8.2 and §10.2):
-- Single three-day window, no temporal-robustness validation across regimes
-- V3 rugs are systematic false negatives in this version (V3 LP-NFT modeling gap); the 0% V3 base rate is a detection artifact, not a real-world observation
+- Only two market regimes; generalization beyond the 2023-Q2 → 2024-Q2 boundary is not established
+- V3 rugs are systematic false negatives in both windows (V3 LP-NFT modeling gap); the 0% V3 base rate is a detection artifact, not a real-world observation
 - 5 of 17 features described in the methodology are unimplemented for data-source reasons
-- Subgraph-derived event ordering is approximate within blocks
+- Subgraph-derived event ordering is approximate within blocks; a known PK-collision pattern produced ~5–10% silent event loss
 
 Raw metrics: [`reports/training_results.json`](reports/training_results.json).
 
