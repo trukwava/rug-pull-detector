@@ -1,0 +1,11 @@
+# Dependabot version updates, with a 3-day cooldown so brand-new releases
+# have time to be caught and pulled if they turn out to be malicious.
+version: 2
+updates:
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 3
+    open-pull-requests-limit: 5
